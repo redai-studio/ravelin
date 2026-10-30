@@ -1,0 +1,10 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+When writing unit tests, you should:
+1. Use unittest.TestCase (and unittest.IsolatedAsyncioTestCase for async) classes.
+2. For all assertions, make sure that the expected value comes first
+3. This is a unit test so normally we should patch all the complicated functions inside of the tested function.
+4. Make sure we have good coverage of the original files.

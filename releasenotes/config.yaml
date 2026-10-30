@@ -1,0 +1,16 @@
+---
+collapse_pre_releases: true
+unreleased_version_title: Unreleased
+# Use normalized release tags such as 1.0.0rc0 (no hyphen before rc).
+pre_release_tag_re: "(?P<pre_release>rc[0-9]+)"
+sections:
+  # The prelude section is implicitly included.
+  - [features, New Features]
+  - [requirements, Usage Requirements]
+  - [design, Design Boundaries]
+  - [issues, Known Issues]
+  - [upgrade, Upgrade Notes]
+  - [api, API Changes]
+  - [security, Security Issues]
+  - [fixes, Bug Fixes]
+encoding: utf8

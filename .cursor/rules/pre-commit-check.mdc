@@ -1,0 +1,12 @@
+---
+alwaysApply: false
+---
+Run `hatch run test:all` and fix the potential issues. There will be 4 checks:
+1. the unit tests (>90% total coverage)
+2. the new code test coverage test (>90%)
+3. linter
+4. type checks
+
+For test coverages, do not try to aim for the perfect coverage. For example, simple return statements are not that suitable for a separate test case. Instead, focus on the most meaningful parts only, and you should get over 90%.
+
+Focus on the actual changed contents - the line numbers might not be that accurate sometimes.

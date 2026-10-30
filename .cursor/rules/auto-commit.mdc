@@ -1,0 +1,12 @@
+---
+alwaysApply: false
+---
+Commit the current changes to git. There are a few pre-commit hooks and please fix any issues if you can. Consult human for things you are not sure, better safe than sorry.
+
+Some basic guidelines:
+- make sure you have included the changes
+- Run `git commit`! There are some standard checks inside the commit hooks for you:
+    1. check the current branch and make sure it is not master
+    2. detect and fix EOF linebreaks and trailing whitespaces, especially for the new release notes
+    3. there is a hatch test suite. If that fails, follow the rules in @pre-commit-check
+- Make a short, one-line commit message that best describes the current changes. Follow conventional commits. If you are not sure if this is a breaking change or not, please ask.

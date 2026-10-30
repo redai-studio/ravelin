@@ -1,0 +1,85 @@
+---
+prelude: |
+  Initial public release of Ravelin, a Python SDK for attaching portable runtime
+  resources, streaming, and durable execution to application-defined flows.
+  Ravelin is beta software. Its current component and pipeline integration is
+  Haystack; applications own workflow semantics, authorization, and permanent
+  product history.
+features:
+  - |
+    Asset references, registered resolvers, and typed secret handling separate
+    serialized component configuration from environment-specific resources.
+    Built-in adapters cover chat and embedding models, Milvus, web search,
+    and web scraping. See :doc:`user-guide/assets`.
+  - |
+    Haystack-compatible components provide chat generation, tool-using agents,
+    retrieval, ranking, prompt construction, and document preprocessing, with
+    extended message and streaming data models.
+  - |
+    Streaming sessions, backend buffers, and relay helpers provide live events,
+    inclusive cursor replay, and catch-up for active generations. Application
+    journal hooks expose lifecycle and activity events for durable storage.
+    Redis subscriptions to a run that has already closed finish instead of
+    waiting. See :doc:`user-guide/streaming`.
+  - |
+    Optional Restate integration provides durable component calls and explicit
+    substeps, configurable failure classification, and approval waits with
+    typed response validation. Values passed between ``RestatePipeline``
+    components may be ``datetime``, ``date``, ``time``, ``timedelta``,
+    ``Decimal``, ``UUID``, ``bytes``, ``set``, ``frozenset`` or ``Enum`` and are
+    restored as the same type. ``max_runs_per_component`` is enforced as in
+    Haystack's ``Pipeline``. See :doc:`user-guide/durability`.
+requirements:
+  - |
+    Python 3.10 or later and Haystack 2.26.x are required. Install the
+    ``milvus``, ``redis``, ``restate``, or ``tracing`` extras for the integrations
+    you use. The Milvus adapter targets 2.5.x APIs with PyMilvus 2.5.x; the
+    tracing integration requires Langfuse and langfuse-haystack 3.x.
+  - |
+    Serializable components need asset references. Local asset files accept
+    environment-variable secret descriptors, not plaintext credentials or
+    runtime token secrets. Token secrets cannot be serialized or saved. Local
+    asset names are relative, forward-slash-separated paths that must resolve
+    inside the configured storage directory.
+    See :doc:`user-guide/asset-resolution` for resolver trust and secret rules.
+  - |
+    Configure model deployment roots with ``base_url`` and operation paths with
+    ``routes``. HTTPX-based assets create their clients lazily and reuse them
+    across calls, with one asynchronous client per event loop; close them with
+    ``close()`` and ``aclose()`` at shutdown. When driving an asset from
+    short-lived event loops, await ``aclose()`` before each loop ends. Local
+    retry settings apply outside Restate;
+    Restate owns retry orchestration inside its context. OpenAI-compatible
+    endpoints without streaming usage support require
+    ``support_stream_options=False``. Token streaming supports one completion
+    per request. See :doc:`user-guide/assets`.
+  - |
+    Approval responses must match the declared payload type. Ordinary dataclasses
+    allow extra fields but require valid mandatory fields and types. Custom
+    decoders keep precedence and their errors propagate. The executor resolver
+    requires a non-empty ``awakeable_id`` and an explicit ``payload``; invalid
+    response bytes fail terminally at the waiter. See :doc:`user-guide/durability`.
+  - |
+    ``RestatePipeline`` inputs are encoded again on every replay and must be
+    deterministic. Component inputs and outputs must be JSON-encodable or one
+    of the supported types; a value that cannot be encoded fails the workflow
+    with a ``TerminalError`` naming the field. See :doc:`user-guide/durability`.
+  - |
+    Journal hooks require asynchronous emission. Use
+    ``streaming_session_async()`` with ``AsyncPipeline`` or ``RestatePipeline``;
+    ``streaming_session()`` rejects ``on_journal_event``, and a synchronous
+    lifecycle or component-activity emit raises ``RuntimeError`` while a hook
+    is configured. See :doc:`user-guide/streaming`.
+design:
+  - |
+    Streaming retention and active-generation snapshots support live delivery
+    and reconnection; applications own permanent product history. Reconnect
+    cursors are inclusive, so clients must handle the repeated boundary event.
+  - |
+    Recovery protects declared durable boundaries. External side effects and
+    application journal writes need idempotency or appropriate durable
+    protection; Ravelin does not guarantee exactly-once external effects.
+  - |
+    Provider features, streaming options, and observability metadata vary by
+    deployment. Applications select and validate the provider capabilities
+    they require.

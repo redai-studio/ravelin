@@ -1,0 +1,218 @@
+[build-system]
+requires = ["hatchling>=1.27.0", "hatch-requirements-txt"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ravelin"
+dynamic = ["version", "dependencies", "optional-dependencies"]
+description = "Independently adoptable production mechanisms for application-defined AI flows: portable assets, reconnectable streaming, application journals, and recoverable execution."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE.txt"]
+requires-python = ">=3.10"
+authors = [{ name = "Bohan Qu", email = "bohanqu@gmail.com" }]
+keywords = ["llm", "ai", "agents", "haystack", "streaming", "durable-execution", "restate"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/redai-studio/ravelin"
+Repository = "https://github.com/redai-studio/ravelin"
+Issues = "https://github.com/redai-studio/ravelin/issues"
+Changelog = "https://github.com/redai-studio/ravelin/releases"
+
+[tool.hatch.metadata.hooks.requirements_txt]
+files = ["requirements.txt"]
+
+[tool.hatch.metadata.hooks.requirements_txt.optional-dependencies]
+milvus = ["requirements-milvus.txt"]
+tracing = ["requirements-tracing.txt"]
+restate = ["requirements-restate.txt"]
+redis = ["requirements-redis.txt"]
+
+[tool.hatch.version]
+path = "VERSION.txt"
+pattern = "(?P<version>.+)"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/ravelin",
+  "/VERSION.txt",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "ravelin",
+]
+
+[tool.hatch.envs.default]
+dependencies = [
+    # Type check
+    "mypy",
+    # Test
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "diff-cover",
+    # Linting
+    "pylint~=3.3",
+    "ruff",
+    # Documentation
+    "reno",
+    # Styling
+    "black~=25.1",
+    # Restate harness
+    "restate_sdk[harness]",
+    # Redis test harness
+    "fakeredis",
+]
+post-install-commands = [
+    "python -m spacy download en_core_web_sm",
+    "python -m spacy download zh_core_web_sm",
+]
+
+features = [
+    "milvus",
+    "tracing",
+    "restate",
+    "redis",
+]
+
+[tool.hatch.envs.docs]
+detached = true
+dependencies = [
+    "reno",
+    "sphinx",
+    "sphinx-autoapi",
+    "sphinx-rtd-theme",
+]
+
+[tool.hatch.envs.docs.scripts]
+build = "sphinx-build -b html {args:docs} {args:docs/_build}"
+clean = "rm -rf docs/_build"
+
+[tool.hatch.envs.default.scripts]
+format = "black ."
+format-check = "black --check ."
+
+[tool.hatch.envs.test.scripts]
+# Runs unit tests and checks total coverage
+unit = 'pytest --cov-report xml:coverage.xml --cov="ravelin" --cov-fail-under=90 -m "not integration" {args:tests}'
+# Runs integration tests separately without replacing unit-test coverage
+integration = 'pytest --no-cov -m integration {args:tests}'
+# Checks coverage against master branch
+diff-cov = "diff-cover coverage.xml --config-file=pyproject.toml --compare-branch {args:origin/master}"
+# Checks types
+types = "mypy --install-types --non-interactive --cache-dir=.mypy_cache/ {args:ravelin}"
+# Lints the code
+lint = [
+    "pylint -ry -j 0 {args:ravelin} --fail-under=10",
+    "ruff check {args:ravelin}"
+]
+# Fixes linting issues
+lint-fix = [
+    "black .",
+    "ruff check {args:ravelin} --fix"
+]
+# Runs all checks
+all = [
+    "unit",
+    "diff-cov",
+    "types",
+    "lint"
+]
+
+[tool.pylint.main]
+extension-pkg-allow-list = ["orjson"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--cov-report=xml"
+testpaths = ["tests"]
+markers = [
+    "integration: tests requiring external services such as Docker and Restate",
+]
+
+[tool.ruff.lint]
+# Pin ruff's rule set to its historical default (Pyflakes + a small subset of
+# pycodestyle errors). Newer ruff releases enable additional categories by
+# default (UP*, I, etc.); opting into those should be a deliberate, separate
+# change rather than a surprise from a version bump.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.black]
+line-length = 120
+target-version = ['py310']
+include = '\.pyi?$'
+exclude = '''
+
+(
+/(
+    \.eggs         # exclude a few common directories in the
+  | \.git          # root of the project
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+| foo.py           # also separately exclude a file named foo.py in
+                   # the root of the project
+)
+'''
+
+
+[tool.pylint.'MESSAGES CONTROL']
+max-line-length=120
+disable = [
+    "fixme"  # We shall remove this once the SDK is in a more stable state
+]
+[tool.pylint.'DESIGN']
+max-args = 20  # Default is 5
+max-positional-arguments=20  # Default is 5
+max-attributes = 28  # Default is 7
+max-branches = 24  # Default is 12
+max-locals = 45  # Default is 15
+max-module-lines = 3000  # Default is 1000
+max-nested-blocks = 10  # Default is 5
+max-returns = 12  # Default is 6
+max-statements = 150  # Default is 50
+min-public-methods = 1  # Default is 2
+[tool.pylint.'SIMILARITIES']
+min-similarity-lines = 40
+
+[tool.mypy]
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.diff_cover]
+compare_branch = "origin/master"
+fail_under = 90
+
+[tool.coverage.run]
+omit = []
+
+[tool.coverage.report]
+exclude_also = [
+    # A pragma comment that excludes an entire file:
+    "\\A(?s:.*# pragma: exclude file.*)\\Z",
+    # Exclude typing conditional imports
+    "if (?:typing\\.)?TYPE_CHECKING:",
+    # Exclude blocks marked with start/stop comments (for Restate handlers tested via harness)
+    "no cover: start(?s:.)*?no cover: stop",
+]
