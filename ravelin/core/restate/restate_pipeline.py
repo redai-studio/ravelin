@@ -372,6 +372,12 @@ class RestatePipeline(PipelineBase):
 
                 # 2. Run READY components with first-completed parallelism
                 if ready_components or running_futures:
+                    # A component already in flight can still be READY: pipeline inputs are kept after consumption
+                    # and trigger it while its visits are 0, which only advance when its result is consumed. Skip
+                    # it, as Haystack's scheduler does with `scheduled_components`, so it never runs twice at once.
+                    # Unlike Haystack's main loop, which waits when its next candidate is in flight, the other
+                    # READY components are still dispatched.
+                    ready_components = [name for name in ready_components if name not in running_futures]
                     # Schedule READY components up to concurrency limit
                     while ready_components and len(running_futures) < concurrency_limit:
                         comp_name = ready_components.pop(0)

@@ -1,0 +1,19 @@
+---
+fixes:
+  - |
+    ``RestatePipeline`` no longer dispatches a component again while its
+    previous call is still in flight. Previously, a component fed by pipeline
+    inputs was dispatched once more each time another running component
+    finished first, so it ran several times (repeating model calls and tool
+    side effects), and only the last call's result or error reached the
+    workflow. Each component now has at most one call in flight, as in
+    Haystack's own scheduler, and ``concurrency_limit`` counts every call.
+upgrade:
+  - |
+    A ``RestatePipeline`` workflow that started on an earlier version and
+    already dispatched a component twice cannot be replayed by this version:
+    its journal records a call that this version no longer makes. Let such
+    workflows finish on the previous deployment by registering this version as
+    a new Restate deployment, or wait until in-flight workflows complete before
+    upgrading. Workflows that never ran parallel components fed by pipeline
+    inputs are not affected.

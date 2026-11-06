@@ -369,3 +369,126 @@ class TestOutputRouting:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+@component
+class _Echo:
+    @component.output_types(result=int)
+    def run(self, value: int):
+        return {"result": value}
+
+
+@component
+class _Sum:
+    @component.output_types(result=int)
+    def run(self, x: int, y: int):
+        return {"result": x + y}
+
+
+class _DispatchProbe:
+    """
+    Drive the real RestatePipeline scheduling loop with local handles instead of Restate futures.
+
+    Components named in ``finish_last`` stay pending while any other call is pending, so a test can hold a component
+    in flight while its siblings complete.
+    """
+
+    def __init__(self, finish_last: tuple[str, ...] = ()):
+        self.finish_last = finish_last
+        self.dispatches: list[tuple[str, int]] = []
+        self.handles: list[int] = []
+        self.consumed: list[int] = []
+        self.pending_sizes: list[int] = []
+        probe = self
+
+        class _Pipeline(RestatePipeline):
+            async def warm_up_executor(self, ctx):
+                return []
+
+            def _create_component_future(self, ctx, component_name, inputs, call_index):
+                probe.dispatches.append((component_name, call_index))
+                probe.handles.append(len(probe.handles))
+                return probe.handles[-1]
+
+        self.pipeline = _Pipeline()
+
+    async def _select(self, **pending):
+        self.pending_sizes.append(len(pending))
+        name = next((n for n in pending if n not in self.finish_last), next(iter(pending)))
+        self.consumed.append(pending[name])
+        return name, {"result": 1}
+
+    async def run(self, data, **kwargs):
+        from unittest.mock import MagicMock, patch
+
+        with patch("ravelin.core.restate.restate_pipeline.restate.select", side_effect=self._select):
+            return await self.pipeline.run(MagicMock(), data, **kwargs)
+
+
+class TestInFlightDispatch:
+    """A component must not be dispatched again while its previous call is still in flight."""
+
+    @pytest.mark.asyncio
+    async def test_running_root_is_not_dispatched_again_when_sibling_finishes_first(self):
+        probe = _DispatchProbe(finish_last=("right",))
+        probe.pipeline.add_component("left", _Echo())
+        probe.pipeline.add_component("right", _Echo())
+
+        outputs = await probe.run({"left": {"value": 1}, "right": {"value": 1}}, include_outputs_from={"left", "right"})
+
+        assert probe.dispatches == [("left", 0), ("right", 0)]
+        assert sorted(probe.consumed) == probe.handles
+        assert outputs == {"left": {"result": 1}, "right": {"result": 1}}
+
+    @pytest.mark.asyncio
+    async def test_slow_root_runs_once_among_many_fast_roots(self):
+        probe = _DispatchProbe(finish_last=("slow",))
+        names = ["a", "b", "c", "slow"]
+        for name in names:
+            probe.pipeline.add_component(name, _Echo())
+
+        await probe.run({name: {"value": 1} for name in names}, concurrency_limit=8)
+
+        assert sorted(probe.dispatches) == [(name, 0) for name in names]
+        assert sorted(probe.consumed) == probe.handles
+
+    @pytest.mark.asyncio
+    async def test_concurrency_limit_counts_every_call_in_flight(self):
+        probe = _DispatchProbe(finish_last=("a",))
+        names = ["a", "b", "c"]
+        for name in names:
+            probe.pipeline.add_component(name, _Echo())
+
+        await probe.run({name: {"value": 1} for name in names}, concurrency_limit=2)
+
+        assert sorted(probe.dispatches) == [(name, 0) for name in names]
+        assert max(probe.pending_sizes) == 2
+        assert sorted(probe.consumed) == probe.handles
+
+    @pytest.mark.asyncio
+    async def test_fan_out_fan_in_runs_each_component_once(self):
+        probe = _DispatchProbe(finish_last=("left",))
+        for name in ("root", "left", "right"):
+            probe.pipeline.add_component(name, _Echo())
+        probe.pipeline.add_component("sum", _Sum())
+        probe.pipeline.connect("root.result", "left.value")
+        probe.pipeline.connect("root.result", "right.value")
+        probe.pipeline.connect("left.result", "sum.x")
+        probe.pipeline.connect("right.result", "sum.y")
+
+        await probe.run({"root": {"value": 1}})
+
+        assert probe.dispatches == [("root", 0), ("left", 0), ("right", 0), ("sum", 0)]
+        assert sorted(probe.consumed) == probe.handles
+
+    @pytest.mark.asyncio
+    async def test_linear_chain_is_unchanged(self):
+        probe = _DispatchProbe()
+        for name in ("first", "second"):
+            probe.pipeline.add_component(name, _Echo())
+        probe.pipeline.connect("first.result", "second.value")
+
+        await probe.run({"first": {"value": 1}})
+
+        assert probe.dispatches == [("first", 0), ("second", 0)]
+        assert sorted(probe.consumed) == probe.handles
