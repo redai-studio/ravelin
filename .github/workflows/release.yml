@@ -1,29 +1,90 @@
 name: Release
 
-# Pushing a version tag (e.g. 0.8.0, 1.0.0rc1) builds and publishes to PyPI.
-# Publishing uses PyPI Trusted Publishing: no API token is stored in the repository.
+# A release is a version tag (e.g. 0.8.0, 1.0.0rc1) that equals VERSION.txt; it is built and published to PyPI.
+# Merging a change to VERSION.txt into master tags that commit and releases it in the same run. Pushing a version tag
+# by hand releases it as well.
+#
+# Tagging and publishing stay in this one workflow: PyPI Trusted Publishing trusts this file by name and does not
+# accept it as a reusable workflow, and a tag pushed with GITHUB_TOKEN would not start another workflow. Publishing
+# uses Trusted Publishing, so no API token is stored in the repository.
 on:
   push:
+    branches: [master]
+    # Path filters only apply to branch pushes; tag pushes always run.
+    paths: [VERSION.txt]
     tags:
       - "[0-9]+.[0-9]+.[0-9]+*"
 
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  build:
-    name: Build distributions
+  tag:
+    name: Tag version bump
+    if: github.ref_type == 'branch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      created: ${{ steps.tag.outputs.created }}
     steps:
       - uses: actions/checkout@v7
+      - name: Tag the commit with VERSION.txt
+        id: tag
+        run: |
+          version="$(tr -d '[:space:]' < VERSION.txt)"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::VERSION.txt ($version) is not a release version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          refs="$(git ls-remote origin "refs/tags/$version" "refs/tags/$version^{}")"
+          if [ -n "$refs" ]; then
+            # An annotated tag also lists its commit as the peeled "^{}" entry, which sorts last.
+            target="$(echo "$refs" | sort -k 2 | tail -n 1 | cut -f 1)"
+            if [ "$target" = "$GITHUB_SHA" ]; then
+              echo "Tag $version already points at this commit; nothing to release"
+              echo "created=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::Tag $version already exists on another commit; bump VERSION.txt to a new version"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$version" -m "$version" "$GITHUB_SHA"
+          git push origin "refs/tags/$version"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build distributions
+    needs: tag
+    # Runs for a pushed tag (tag job skipped) or for a tag the tag job just created.
+    if: >-
+      !cancelled() && (
+        (github.ref_type == 'tag' && needs.tag.result == 'skipped') ||
+        (needs.tag.result == 'success' && needs.tag.outputs.created == 'true')
+      )
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.ref_type == 'tag' && github.ref_name || needs.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.VERSION }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Check tag matches VERSION.txt
         run: |
           version="$(tr -d '[:space:]' < VERSION.txt)"
-          if [ "$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match VERSION.txt ($version)" >&2
+          if [ "$version" != "$VERSION" ]; then
+            echo "Tag $VERSION does not match VERSION.txt ($version)" >&2
             exit 1
           fi
       - name: Build
@@ -39,6 +100,7 @@ jobs:
   publish:
     name: Publish to PyPI
     needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
